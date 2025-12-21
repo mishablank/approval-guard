@@ -1,36 +1,43 @@
 {
-	"name": "approval-guard",
-	"version": "1.0.0",
-	"description": "A CLI utility that scans Ethereum wallet token approvals and outputs a risk assessment report",
-	"main": "dist/index.js",
-	"bin": {
-		"approval-guard": "./dist/index.js"
-	},
-	"scripts": {
-		"build": "tsc",
-		"start": "node dist/index.js",
-		"dev": "ts-node src/index.ts",
-		"lint": "eslint src/**/*.ts"
-	},
-	"keywords": [
-		"ethereum",
-		"erc20",
-		"approvals",
-		"security",
-		"cli"
-	],
-	"author": "",
-	"license": "MIT",
-	"dependencies": {
-		"commander": "^11.1.0",
-		"viem": "^2.0.0"
-	},
-	"devDependencies": {
-		"@types/node": "^20.10.0",
-		"@typescript-eslint/eslint-plugin": "^6.13.0",
-		"@typescript-eslint/parser": "^6.13.0",
-		"eslint": "^8.55.0",
-		"ts-node": "^10.9.1",
-		"typescript": "^5.3.0"
-	}
+  "name": "approval-guard",
+  "version": "0.1.0",
+  "description": "A CLI utility that scans Ethereum wallet token approvals and outputs a risk assessment report",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "approval-guard": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ethereum",
+    "erc20",
+    "approvals",
+    "security",
+    "cli",
+    "wallet"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.17.0",
+    "dotenv": "^16.4.5",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5",
+    "tsx": "^4.15.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
