@@ -1,64 +1,94 @@
+import type { Address } from 'viem';
+
 /**
- * Represents a single ERC-20 token approval
+ * Represents a token approval found during scanning
  */
 export interface TokenApproval {
-	/** Token contract address */
-	tokenAddress: string;
-	/** Token symbol if available */
-	tokenSymbol?: string;
-	/** Spender address that has approval */
-	spenderAddress: string;
-	/** Approved amount in wei */
-	allowance: bigint;
-	/** Whether this is an unlimited approval */
-	isUnlimited: boolean;
-	/** Block number when approval was set */
-	blockNumber: bigint;
-	/** Timestamp of the approval (if available) */
-	timestamp?: number;
+  tokenAddress: Address;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  spenderAddress: Address;
+  spenderName: string | null;
+  spenderVerified: boolean;
+  allowance: bigint;
+  lastUsed: number | null; // Unix timestamp
+  blockNumber: bigint;
+  transactionHash: string;
 }
 
 /**
- * Risk assessment for a single approval
+ * Risk level categories
  */
-export interface ApprovalRisk {
-	approval: TokenApproval;
-	/** Risk score from 0-100 */
-	riskScore: number;
-	/** Risk factors identified */
-	riskFactors: string[];
-	/** Recommended action */
-	recommendation: 'revoke' | 'review' | 'safe';
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Risk score for an individual approval
+ */
+export interface RiskScore {
+  score: number; // 0-100
+  level: RiskLevel;
+  factors: string[];
+  recommendation: string;
 }
 
 /**
- * Complete risk assessment report
+ * Full risk assessment for a wallet
  */
-export interface RiskReport {
-	/** Wallet address scanned */
-	walletAddress: string;
-	/** Timestamp of the scan */
-	scanTimestamp: string;
-	/** Overall risk score 0-100 */
-	overallRiskScore: number;
-	/** Total number of approvals found */
-	totalApprovals: number;
-	/** Count of high risk approvals */
-	highRiskCount: number;
-	/** Individual approval assessments */
-	approvals: ApprovalRisk[];
-	/** Summary of recommendations */
-	summary: {
-		revokeImmediately: string[];
-		reviewSoon: string[];
-	};
+export interface WalletRiskAssessment {
+  walletAddress: Address;
+  scanTimestamp: number;
+  chainId: number;
+  totalApprovals: number;
+  overallRiskScore: number;
+  overallRiskLevel: RiskLevel;
+  approvals: ApprovalWithRisk[];
+  summary: RiskSummary;
 }
 
 /**
- * ERC-20 Approval event signature
+ * Token approval with its calculated risk
  */
-export const APPROVAL_EVENT_SIGNATURE = 
-	'0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925';
+export interface ApprovalWithRisk extends TokenApproval {
+  risk: RiskScore;
+}
 
-/** Maximum uint256 value - indicates unlimited approval */
-export const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+/**
+ * Summary statistics for the report
+ */
+export interface RiskSummary {
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  unlimitedApprovals: number;
+  dormantApprovals: number;
+  recommendedRevocations: number;
+}
+
+/**
+ * Configuration for the scanner
+ */
+export interface ScannerConfig {
+  rpcUrl: string;
+  chainId: number;
+  fromBlock?: bigint;
+  toBlock?: bigint;
+}
+
+/**
+ * Output format options
+ */
+export type OutputFormat = 'json' | 'table' | 'minimal';
+
+/**
+ * CLI options
+ */
+export interface CLIOptions {
+  wallet: Address;
+  rpcUrl?: string;
+  chainId?: number;
+  output?: string;
+  format?: OutputFormat;
+  verbose?: boolean;
+}
