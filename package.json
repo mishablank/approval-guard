@@ -1,0 +1,36 @@
+{
+	"name": "approval-guard",
+	"version": "1.0.0",
+	"description": "A CLI utility that scans Ethereum wallet token approvals and outputs a risk assessment report",
+	"main": "dist/index.js",
+	"bin": {
+		"approval-guard": "./dist/index.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"dev": "ts-node src/index.ts",
+		"lint": "eslint src/**/*.ts"
+	},
+	"keywords": [
+		"ethereum",
+		"erc20",
+		"approvals",
+		"security",
+		"cli"
+	],
+	"author": "",
+	"license": "MIT",
+	"dependencies": {
+		"commander": "^11.1.0",
+		"viem": "^2.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.10.0",
+		"@typescript-eslint/eslint-plugin": "^6.13.0",
+		"@typescript-eslint/parser": "^6.13.0",
+		"eslint": "^8.55.0",
+		"ts-node": "^10.9.1",
+		"typescript": "^5.3.0"
+	}
+}
