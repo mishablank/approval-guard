@@ -1,22 +1,26 @@
 {
   "name": "approval-guard",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A CLI utility that scans Ethereum wallet token approvals and outputs a risk assessment report",
   "main": "dist/index.js",
   "bin": {
-    "approval-guard": "./dist/index.js"
+    "approval-guard": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts",
     "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "ethereum",
     "token",
-    "approval",
+    "approvals",
     "security",
     "cli",
     "erc20"
@@ -24,15 +28,20 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "dotenv": "^16.3.1",
+    "ora": "^5.4.1",
     "viem": "^2.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.11",
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.54.0",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
     "ts-node": "^10.9.1",
     "typescript": "^5.3.0"
   },
