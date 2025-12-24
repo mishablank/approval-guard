@@ -1,94 +1,89 @@
-import type { Address } from 'viem';
+import { Address } from 'viem';
 
-/**
- * Represents a token approval found during scanning
- */
-export interface TokenApproval {
+export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'safe';
+
+export interface TokenInfo {
+  address: Address;
+  name: string;
+  symbol: string;
+  decimals: number;
+}
+
+export interface SpenderInfo {
+  address: Address;
+  name?: string;
+  isVerified: boolean;
+  contractType?: string;
+}
+
+export interface Approval {
   tokenAddress: Address;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenDecimals: number;
+  tokenInfo: TokenInfo;
   spenderAddress: Address;
-  spenderName: string | null;
-  spenderVerified: boolean;
+  spenderInfo: SpenderInfo;
   allowance: bigint;
-  lastUsed: number | null; // Unix timestamp
-  blockNumber: bigint;
-  transactionHash: string;
+  isUnlimited: boolean;
+  lastUpdated?: Date;
+  transactionHash?: string;
 }
 
-/**
- * Risk level categories
- */
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+export interface RiskFactor {
+  name: string;
+  description: string;
+  impact: number;
+}
 
-/**
- * Risk score for an individual approval
- */
 export interface RiskScore {
-  score: number; // 0-100
+  score: number;
   level: RiskLevel;
-  factors: string[];
-  recommendation: string;
+  factors: RiskFactor[];
 }
 
-/**
- * Full risk assessment for a wallet
- */
-export interface WalletRiskAssessment {
+export interface RevocationRecommendation {
+  approval: Approval;
+  riskScore: RiskScore;
+  shouldRevoke: boolean;
+  urgency: 'immediate' | 'high' | 'medium' | 'low';
+  reason: string;
+  estimatedGasCost: bigint;
+  createdAt: Date;
+}
+
+export interface ScanResult {
   walletAddress: Address;
-  scanTimestamp: number;
   chainId: number;
+  approvals: Approval[];
+  scannedAt: Date;
+}
+
+export interface RiskReport {
+  scanResult: ScanResult;
+  riskScores: Map<string, RiskScore>;
+  recommendations: RevocationRecommendation[];
+  summary: ReportSummary;
+  generatedAt: Date;
+}
+
+export interface ReportSummary {
   totalApprovals: number;
-  overallRiskScore: number;
-  overallRiskLevel: RiskLevel;
-  approvals: ApprovalWithRisk[];
-  summary: RiskSummary;
-}
-
-/**
- * Token approval with its calculated risk
- */
-export interface ApprovalWithRisk extends TokenApproval {
-  risk: RiskScore;
-}
-
-/**
- * Summary statistics for the report
- */
-export interface RiskSummary {
-  criticalCount: number;
-  highCount: number;
-  mediumCount: number;
-  lowCount: number;
-  unlimitedApprovals: number;
-  dormantApprovals: number;
+  criticalRisk: number;
+  highRisk: number;
+  mediumRisk: number;
+  lowRisk: number;
+  safeApprovals: number;
   recommendedRevocations: number;
+  estimatedTotalGasCost: bigint;
 }
 
-/**
- * Configuration for the scanner
- */
-export interface ScannerConfig {
-  rpcUrl: string;
-  chainId: number;
-  fromBlock?: bigint;
-  toBlock?: bigint;
-}
-
-/**
- * Output format options
- */
-export type OutputFormat = 'json' | 'table' | 'minimal';
-
-/**
- * CLI options
- */
-export interface CLIOptions {
-  wallet: Address;
-  rpcUrl?: string;
+export interface ScanOptions {
+  walletAddress: Address;
   chainId?: number;
-  output?: string;
-  format?: OutputFormat;
+  rpcUrl?: string;
+  includeZeroAllowances?: boolean;
+}
+
+export interface ReportOptions {
+  format: 'json' | 'text' | 'csv';
+  outputPath?: string;
   verbose?: boolean;
 }
