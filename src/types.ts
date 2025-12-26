@@ -1,6 +1,13 @@
-import { Address } from 'viem';
+import type { Address } from 'viem';
 
-export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'safe';
+export interface ApprovalEvent {
+  tokenAddress: Address;
+  owner: Address;
+  spender: Address;
+  value: bigint;
+  blockNumber: bigint;
+  transactionHash: string;
+}
 
 export interface TokenInfo {
   address: Address;
@@ -13,77 +20,104 @@ export interface SpenderInfo {
   address: Address;
   name?: string;
   isVerified: boolean;
-  contractType?: string;
+  contractAge?: number;
+  lastActivity?: Date;
 }
 
-export interface Approval {
-  tokenAddress: Address;
-  tokenInfo: TokenInfo;
-  spenderAddress: Address;
-  spenderInfo: SpenderInfo;
+export interface ApprovalDetails {
+  token: TokenInfo;
+  spender: SpenderInfo;
   allowance: bigint;
   isUnlimited: boolean;
-  lastUpdated?: Date;
-  transactionHash?: string;
+  lastUsed?: Date;
+  approvalDate: Date;
+  riskScore: number;
+  riskFactors: RiskFactor[];
 }
 
 export interface RiskFactor {
-  name: string;
+  type: RiskFactorType;
+  severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
-  impact: number;
+  weight: number;
 }
 
-export interface RiskScore {
-  score: number;
-  level: RiskLevel;
-  factors: RiskFactor[];
-}
+export type RiskFactorType =
+  | 'unlimited_approval'
+  | 'dormant_approval'
+  | 'unverified_spender'
+  | 'new_contract'
+  | 'high_value'
+  | 'inactive_spender'
+  | 'suspicious_pattern';
 
-export interface RevocationRecommendation {
-  approval: Approval;
-  riskScore: RiskScore;
-  shouldRevoke: boolean;
-  urgency: 'immediate' | 'high' | 'medium' | 'low';
-  reason: string;
-  estimatedGasCost: bigint;
-  createdAt: Date;
-}
-
-export interface ScanResult {
+export interface RiskAssessment {
   walletAddress: Address;
-  chainId: number;
-  approvals: Approval[];
-  scannedAt: Date;
-}
-
-export interface RiskReport {
-  scanResult: ScanResult;
-  riskScores: Map<string, RiskScore>;
-  recommendations: RevocationRecommendation[];
-  summary: ReportSummary;
-  generatedAt: Date;
-}
-
-export interface ReportSummary {
+  scanDate: Date;
   totalApprovals: number;
-  criticalRisk: number;
-  highRisk: number;
-  mediumRisk: number;
-  lowRisk: number;
-  safeApprovals: number;
-  recommendedRevocations: number;
-  estimatedTotalGasCost: bigint;
+  highRiskCount: number;
+  mediumRiskCount: number;
+  lowRiskCount: number;
+  overallRiskScore: number;
+  approvals: ApprovalDetails[];
+  recommendations: Recommendation[];
 }
 
-export interface ScanOptions {
-  walletAddress: Address;
-  chainId?: number;
-  rpcUrl?: string;
-  includeZeroAllowances?: boolean;
+export interface Recommendation {
+  type: 'revoke' | 'reduce' | 'monitor';
+  priority: 'immediate' | 'soon' | 'optional';
+  approval: ApprovalDetails;
+  reason: string;
 }
 
 export interface ReportOptions {
-  format: 'json' | 'text' | 'csv';
+  format: 'json' | 'markdown' | 'csv';
+  includeRecommendations: boolean;
+  minRiskScore?: number;
   outputPath?: string;
+}
+
+export interface ScanOptions {
+  fromBlock?: bigint;
+  toBlock?: bigint;
+  tokenAddresses?: Address[];
+  useCache?: boolean;
+  onProgress?: (progress: ScanProgress) => void;
+}
+
+export interface ScanProgress {
+  phase: 'scanning' | 'processing' | 'analyzing' | 'complete';
+  current: number;
+  total: number;
+  message: string;
+}
+
+export interface RevocationRequest {
+  tokenAddress: Address;
+  spenderAddress: Address;
+}
+
+export interface RevocationResult {
+  success: boolean;
+  tokenAddress: Address;
+  spenderAddress: Address;
+  transactionHash?: string;
+  error?: string;
+}
+
+export interface BatchRevocationResult {
+  successful: RevocationResult[];
+  failed: RevocationResult[];
+  totalGasUsed?: bigint;
+}
+
+export interface CLIOptions {
+  wallet: string;
+  rpc?: string;
+  output?: string;
+  format?: 'json' | 'markdown' | 'csv';
+  minRisk?: number;
+  revoke?: boolean;
+  dryRun?: boolean;
   verbose?: boolean;
 }
