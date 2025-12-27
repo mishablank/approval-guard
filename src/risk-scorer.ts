@@ -1,142 +1,170 @@
-import type { TokenApproval, RiskScore, RiskLevel } from './types';
-import {
-  UNLIMITED_THRESHOLD,
-  DORMANT_DAYS_THRESHOLD,
-  RISK_WEIGHTS,
-  RISK_THRESHOLDS,
-} from './constants';
+import { Approval, RiskScore, RiskLevel, RiskFactor } from './types';
+import { RISK_THRESHOLDS } from './constants';
 
-/**
- * Calculate the number of days since a given timestamp
- */
-function daysSince(timestamp: number): number {
-  const now = Date.now();
-  const diff = now - timestamp * 1000; // Convert seconds to milliseconds
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-}
+export class RiskScorer {
+  private readonly UNLIMITED_APPROVAL_THRESHOLD = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff') / BigInt(2);
+  private readonly DORMANT_DAYS_THRESHOLD = 90;
+  private readonly HIGH_VALUE_THRESHOLD = BigInt('1000000000000000000000'); // 1000 tokens with 18 decimals
 
-/**
- * Determine if an approval amount is considered unlimited
- */
-export function isUnlimitedApproval(amount: bigint): boolean {
-  return amount >= UNLIMITED_THRESHOLD;
-}
+  scoreApproval(approval: Approval): RiskScore {
+    const factors: RiskFactor[] = [];
+    let totalScore = 0;
 
-/**
- * Determine if an approval is dormant (not used recently)
- */
-export function isDormantApproval(lastUsedTimestamp: number | null): boolean {
-  if (lastUsedTimestamp === null) {
-    return true; // Never used approvals are considered dormant
-  }
-  return daysSince(lastUsedTimestamp) > DORMANT_DAYS_THRESHOLD;
-}
+    // Handle zero-value approvals (already revoked or never set)
+    if (approval.value === BigInt(0)) {
+      return {
+        overall: 0,
+        level: RiskLevel.LOW,
+        factors: [{
+          name: 'zero_approval',
+          score: 0,
+          description: 'Approval has zero value (effectively revoked)',
+          weight: 1
+        }]
+      };
+    }
 
-/**
- * Get risk level based on score
- */
-export function getRiskLevel(score: number): RiskLevel {
-  if (score >= RISK_THRESHOLDS.CRITICAL) return 'critical';
-  if (score >= RISK_THRESHOLDS.HIGH) return 'high';
-  if (score >= RISK_THRESHOLDS.MEDIUM) return 'medium';
-  return 'low';
-}
+    // Check for unlimited approval
+    const unlimitedFactor = this.checkUnlimitedApproval(approval);
+    if (unlimitedFactor) {
+      factors.push(unlimitedFactor);
+      totalScore += unlimitedFactor.score * unlimitedFactor.weight;
+    }
 
-/**
- * Calculate risk score for a single token approval
- */
-export function calculateApprovalRisk(approval: TokenApproval): RiskScore {
-  let score = 0;
-  const factors: string[] = [];
+    // Check for dormant approval
+    const dormantFactor = this.checkDormantApproval(approval);
+    if (dormantFactor) {
+      factors.push(dormantFactor);
+      totalScore += dormantFactor.score * dormantFactor.weight;
+    }
 
-  // Check for unlimited approval
-  if (isUnlimitedApproval(approval.allowance)) {
-    score += RISK_WEIGHTS.UNLIMITED_APPROVAL;
-    factors.push('Unlimited approval amount');
-  }
+    // Check for unverified spender
+    const unverifiedFactor = this.checkUnverifiedSpender(approval);
+    if (unverifiedFactor) {
+      factors.push(unverifiedFactor);
+      totalScore += unverifiedFactor.score * unverifiedFactor.weight;
+    }
 
-  // Check for dormant approval
-  if (isDormantApproval(approval.lastUsed)) {
-    score += RISK_WEIGHTS.DORMANT_APPROVAL;
-    factors.push(`Dormant for over ${DORMANT_DAYS_THRESHOLD} days`);
-  }
+    // Check for high value approval
+    const highValueFactor = this.checkHighValueApproval(approval);
+    if (highValueFactor) {
+      factors.push(highValueFactor);
+      totalScore += highValueFactor.score * highValueFactor.weight;
+    }
 
-  // Check if spender is verified
-  if (!approval.spenderVerified) {
-    score += RISK_WEIGHTS.UNVERIFIED_SPENDER;
-    factors.push('Unverified spender contract');
+    // Normalize score to 0-100
+    const totalWeight = factors.reduce((sum, f) => sum + f.weight, 0);
+    const normalizedScore = totalWeight > 0 
+      ? Math.min(100, Math.round((totalScore / totalWeight) * 100))
+      : 0;
+
+    return {
+      overall: normalizedScore,
+      level: this.calculateRiskLevel(normalizedScore),
+      factors
+    };
   }
 
-  // Check if spender name is unknown
-  if (!approval.spenderName || approval.spenderName === 'Unknown') {
-    score += RISK_WEIGHTS.UNKNOWN_SPENDER;
-    factors.push('Unknown spender identity');
+  private checkUnlimitedApproval(approval: Approval): RiskFactor | null {
+    if (approval.value >= this.UNLIMITED_APPROVAL_THRESHOLD) {
+      return {
+        name: 'unlimited_approval',
+        score: 0.9,
+        description: 'Unlimited token approval detected',
+        weight: 3
+      };
+    }
+    return null;
   }
 
-  // Cap score at 100
-  score = Math.min(score, 100);
+  private checkDormantApproval(approval: Approval): RiskFactor | null {
+    if (!approval.lastUsed) {
+      // Never used approvals are also risky
+      return {
+        name: 'never_used',
+        score: 0.6,
+        description: 'Approval has never been used',
+        weight: 2
+      };
+    }
 
-  return {
-    score,
-    level: getRiskLevel(score),
-    factors,
-    recommendation: generateRecommendation(score, factors),
-  };
-}
+    const daysSinceUse = Math.floor(
+      (Date.now() - approval.lastUsed.getTime()) / (1000 * 60 * 60 * 24)
+    );
 
-/**
- * Generate a recommendation based on risk score and factors
- */
-function generateRecommendation(score: number, factors: string[]): string {
-  const level = getRiskLevel(score);
+    if (daysSinceUse > this.DORMANT_DAYS_THRESHOLD) {
+      return {
+        name: 'dormant_approval',
+        score: 0.7,
+        description: `Approval unused for ${daysSinceUse} days`,
+        weight: 2
+      };
+    }
 
-  switch (level) {
-    case 'critical':
-      return 'Immediate revocation recommended. This approval poses significant security risks.';
-    case 'high':
-      return 'Revocation strongly recommended. Consider removing this approval soon.';
-    case 'medium':
-      return 'Review this approval. Consider revoking if the spender is not actively used.';
-    case 'low':
-      return 'Low risk approval. Monitor periodically.';
-    default:
-      return 'Unable to determine recommendation.';
+    return null;
+  }
+
+  private checkUnverifiedSpender(approval: Approval): RiskFactor | null {
+    if (!approval.spenderVerified) {
+      return {
+        name: 'unverified_spender',
+        score: 0.5,
+        description: 'Spender contract is not verified',
+        weight: 1.5
+      };
+    }
+    return null;
+  }
+
+  private checkHighValueApproval(approval: Approval): RiskFactor | null {
+    // Skip if unlimited (already covered)
+    if (approval.value >= this.UNLIMITED_APPROVAL_THRESHOLD) {
+      return null;
+    }
+
+    if (approval.value >= this.HIGH_VALUE_THRESHOLD) {
+      return {
+        name: 'high_value',
+        score: 0.4,
+        description: 'High value approval amount',
+        weight: 1
+      };
+    }
+    return null;
+  }
+
+  private calculateRiskLevel(score: number): RiskLevel {
+    if (score >= RISK_THRESHOLDS.CRITICAL) {
+      return RiskLevel.CRITICAL;
+    }
+    if (score >= RISK_THRESHOLDS.HIGH) {
+      return RiskLevel.HIGH;
+    }
+    if (score >= RISK_THRESHOLDS.MEDIUM) {
+      return RiskLevel.MEDIUM;
+    }
+    return RiskLevel.LOW;
+  }
+
+  scoreMultiple(approvals: Approval[]): Map<string, RiskScore> {
+    const scores = new Map<string, RiskScore>();
+    
+    for (const approval of approvals) {
+      const key = `${approval.tokenAddress}-${approval.spenderAddress}`;
+      scores.set(key, this.scoreApproval(approval));
+    }
+
+    return scores;
+  }
+
+  getAggregateRisk(scores: RiskScore[]): RiskLevel {
+    if (scores.length === 0) {
+      return RiskLevel.LOW;
+    }
+
+    const maxScore = Math.max(...scores.map(s => s.overall));
+    return this.calculateRiskLevel(maxScore);
   }
 }
 
-/**
- * Calculate aggregate risk score for all approvals
- */
-export function calculateWalletRiskScore(approvals: TokenApproval[]): {
-  overallScore: number;
-  overallLevel: RiskLevel;
-  approvalRisks: Map<string, RiskScore>;
-} {
-  const approvalRisks = new Map<string, RiskScore>();
-  let totalScore = 0;
-
-  for (const approval of approvals) {
-    const key = `${approval.tokenAddress}-${approval.spenderAddress}`;
-    const risk = calculateApprovalRisk(approval);
-    approvalRisks.set(key, risk);
-    totalScore += risk.score;
-  }
-
-  // Calculate average score, weighted by number of high-risk approvals
-  const averageScore = approvals.length > 0 ? totalScore / approvals.length : 0;
-  const highRiskCount = Array.from(approvalRisks.values()).filter(
-    (r) => r.level === 'high' || r.level === 'critical'
-  ).length;
-
-  // Boost overall score if there are multiple high-risk approvals
-  const boostedScore = Math.min(
-    100,
-    averageScore + highRiskCount * 5
-  );
-
-  return {
-    overallScore: Math.round(boostedScore),
-    overallLevel: getRiskLevel(boostedScore),
-    approvalRisks,
-  };
-}
+export const riskScorer = new RiskScorer();
