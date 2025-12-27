@@ -1,12 +1,51 @@
-import type { Address } from 'viem';
+import { Address } from 'viem';
 
-export interface ApprovalEvent {
+export interface ApprovalData {
   tokenAddress: Address;
-  owner: Address;
-  spender: Address;
-  value: bigint;
-  blockNumber: bigint;
-  transactionHash: string;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  spenderAddress: Address;
+  spenderName?: string;
+  allowance: bigint;
+  isUnlimited: boolean;
+  lastUpdatedBlock?: number;
+  lastUpdatedTimestamp?: Date;
+}
+
+export interface RiskAssessment {
+  tokenAddress: Address;
+  spenderAddress: Address;
+  riskScore: number;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  factors: string[];
+}
+
+export interface RevocationRecommendation {
+  tokenAddress: Address;
+  tokenSymbol: string;
+  spenderAddress: Address;
+  spenderName?: string;
+  shouldRevoke: boolean;
+  priority: number;
+  reason: string;
+  estimatedGas?: bigint;
+}
+
+export interface ScanOptions {
+  rpcUrl: string;
+  chainId: number;
+  fromBlock?: bigint;
+  toBlock?: bigint;
+  batchSize?: number;
+}
+
+export interface Config {
+  rpcUrl: string;
+  chainId: number;
+  maxBlockRange: number;
+  requestsPerSecond: number;
+  unlimitedThreshold: bigint;
 }
 
 export interface TokenInfo {
@@ -20,104 +59,41 @@ export interface SpenderInfo {
   address: Address;
   name?: string;
   isVerified: boolean;
-  contractAge?: number;
-  lastActivity?: Date;
-}
-
-export interface ApprovalDetails {
-  token: TokenInfo;
-  spender: SpenderInfo;
-  allowance: bigint;
-  isUnlimited: boolean;
-  lastUsed?: Date;
-  approvalDate: Date;
   riskScore: number;
-  riskFactors: RiskFactor[];
 }
 
-export interface RiskFactor {
-  type: RiskFactorType;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  description: string;
-  weight: number;
-}
+export type ReportFormat = 'json' | 'text' | 'csv';
 
-export type RiskFactorType =
-  | 'unlimited_approval'
-  | 'dormant_approval'
-  | 'unverified_spender'
-  | 'new_contract'
-  | 'high_value'
-  | 'inactive_spender'
-  | 'suspicious_pattern';
-
-export interface RiskAssessment {
-  walletAddress: Address;
-  scanDate: Date;
+export interface ApprovalReportSummary {
   totalApprovals: number;
   highRiskCount: number;
   mediumRiskCount: number;
   lowRiskCount: number;
-  overallRiskScore: number;
-  approvals: ApprovalDetails[];
-  recommendations: Recommendation[];
+  totalRiskScore: number;
+  overallRiskLevel: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export interface Recommendation {
-  type: 'revoke' | 'reduce' | 'monitor';
-  priority: 'immediate' | 'soon' | 'optional';
-  approval: ApprovalDetails;
-  reason: string;
+export interface ApprovalReportDetail {
+  approval: ApprovalData;
+  riskAssessment: RiskAssessment;
+  recommendation?: RevocationRecommendation;
 }
 
-export interface ReportOptions {
-  format: 'json' | 'markdown' | 'csv';
-  includeRecommendations: boolean;
-  minRiskScore?: number;
-  outputPath?: string;
+export interface ApprovalReport {
+  walletAddress: string;
+  generatedAt: string;
+  summary: ApprovalReportSummary;
+  approvals: ApprovalReportDetail[];
+  recommendations: RevocationRecommendation[];
 }
 
-export interface ScanOptions {
-  fromBlock?: bigint;
-  toBlock?: bigint;
-  tokenAddresses?: Address[];
-  useCache?: boolean;
-  onProgress?: (progress: ScanProgress) => void;
+export interface BatchItem<T> {
+  data: T;
+  index: number;
 }
 
-export interface ScanProgress {
-  phase: 'scanning' | 'processing' | 'analyzing' | 'complete';
-  current: number;
-  total: number;
-  message: string;
-}
-
-export interface RevocationRequest {
-  tokenAddress: Address;
-  spenderAddress: Address;
-}
-
-export interface RevocationResult {
-  success: boolean;
-  tokenAddress: Address;
-  spenderAddress: Address;
-  transactionHash?: string;
-  error?: string;
-}
-
-export interface BatchRevocationResult {
-  successful: RevocationResult[];
-  failed: RevocationResult[];
-  totalGasUsed?: bigint;
-}
-
-export interface CLIOptions {
-  wallet: string;
-  rpc?: string;
-  output?: string;
-  format?: 'json' | 'markdown' | 'csv';
-  minRisk?: number;
-  revoke?: boolean;
-  dryRun?: boolean;
-  verbose?: boolean;
+export interface BatchResult<T, R> {
+  item: BatchItem<T>;
+  result?: R;
+  error?: Error;
 }
