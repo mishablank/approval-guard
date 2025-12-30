@@ -1,82 +1,111 @@
-import { Address, PublicClient } from 'viem';
-import { TokenApproval, ScanResult } from '../types';
-import { isValidAddress, normalizeAddress } from '../utils/address';
+import type { PublicClient, Address } from 'viem';
+import type { ApprovalInfo } from '../types';
+import { ApprovalFetcher } from './approval-fetcher';
+import { TokenMetadataService } from './token-metadata-service';
+import { ApprovalGuardError } from '../errors';
 
-export interface ApprovalServiceConfig {
-  client: PublicClient;
-  includeZeroApprovals?: boolean;
+export interface ApprovalServiceOptions {
+  includeZeroAllowances?: boolean;
+  enrichMetadata?: boolean;
 }
 
 export class ApprovalService {
-  private client: PublicClient;
-  private includeZeroApprovals: boolean;
+  private publicClient: PublicClient;
+  private approvalFetcher: ApprovalFetcher;
+  private tokenMetadataService: TokenMetadataService;
 
-  constructor(config: ApprovalServiceConfig) {
-    this.client = config.client;
-    this.includeZeroApprovals = config.includeZeroApprovals ?? false;
+  constructor(
+    publicClient: PublicClient,
+    approvalFetcher?: ApprovalFetcher,
+    tokenMetadataService?: TokenMetadataService
+  ) {
+    this.publicClient = publicClient;
+    this.approvalFetcher = approvalFetcher || new ApprovalFetcher(publicClient);
+    this.tokenMetadataService = tokenMetadataService || new TokenMetadataService(publicClient);
   }
 
-  async getApprovalsForWallet(walletAddress: string): Promise<ScanResult> {
-    if (!isValidAddress(walletAddress)) {
-      throw new Error(`Invalid wallet address: ${walletAddress}`);
-    }
-
-    const normalizedAddress = normalizeAddress(walletAddress);
-    const startTime = Date.now();
+  async getApprovals(
+    walletAddress: Address,
+    options: ApprovalServiceOptions = {}
+  ): Promise<ApprovalInfo[]> {
+    const { includeZeroAllowances = false, enrichMetadata = true } = options;
 
     try {
-      const approvals = await this.fetchApprovals(normalizedAddress as Address);
-      const filteredApprovals = this.includeZeroApprovals
-        ? approvals
-        : approvals.filter((a) => a.allowance !== '0');
+      let approvals = await this.approvalFetcher.fetchApprovals(walletAddress);
 
-      return {
-        walletAddress: normalizedAddress,
-        approvals: filteredApprovals,
-        scanTimestamp: new Date().toISOString(),
-        totalApprovals: filteredApprovals.length,
-        scanDurationMs: Date.now() - startTime,
-      };
+      if (!includeZeroAllowances) {
+        approvals = approvals.filter(a => BigInt(a.allowance) > 0n);
+      }
+
+      if (enrichMetadata) {
+        approvals = await this.enrichApprovalsWithMetadata(approvals);
+      }
+
+      return approvals;
     } catch (error) {
-      throw new Error(
-        `Failed to fetch approvals: ${error instanceof Error ? error.message : 'Unknown error'}`
+      throw new ApprovalGuardError(
+        `Failed to get approvals for ${walletAddress}`,
+        'APPROVAL_FETCH_ERROR',
+        error
       );
     }
   }
 
-  private async fetchApprovals(walletAddress: Address): Promise<TokenApproval[]> {
-    // This will be implemented by the scanner module
-    // For now, return empty array as placeholder
-    return [];
+  async getApprovalsBySpender(
+    walletAddress: Address,
+    spenderAddress: Address
+  ): Promise<ApprovalInfo[]> {
+    const allApprovals = await this.getApprovals(walletAddress);
+    return allApprovals.filter(
+      a => a.spender.toLowerCase() === spenderAddress.toLowerCase()
+    );
   }
 
-  async getApprovalDetails(
-    tokenAddress: string,
-    ownerAddress: string,
-    spenderAddress: string
-  ): Promise<TokenApproval | null> {
-    if (!isValidAddress(tokenAddress) || !isValidAddress(ownerAddress) || !isValidAddress(spenderAddress)) {
-      throw new Error('Invalid address provided');
-    }
-
-    // Placeholder for detailed approval lookup
-    return null;
+  async getApprovalsByToken(
+    walletAddress: Address,
+    tokenAddress: Address
+  ): Promise<ApprovalInfo[]> {
+    const allApprovals = await this.getApprovals(walletAddress);
+    return allApprovals.filter(
+      a => a.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
+    );
   }
 
-  async batchGetApprovals(
-    walletAddresses: string[]
-  ): Promise<Map<string, ScanResult>> {
-    const results = new Map<string, ScanResult>();
+  async getUnlimitedApprovals(walletAddress: Address): Promise<ApprovalInfo[]> {
+    const approvals = await this.getApprovals(walletAddress);
+    const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+    const unlimitedThreshold = maxUint256 / 2n;
 
-    for (const address of walletAddresses) {
+    return approvals.filter(a => BigInt(a.allowance) >= unlimitedThreshold);
+  }
+
+  async getApprovalCount(walletAddress: Address): Promise<number> {
+    const approvals = await this.getApprovals(walletAddress);
+    return approvals.length;
+  }
+
+  private async enrichApprovalsWithMetadata(
+    approvals: ApprovalInfo[]
+  ): Promise<ApprovalInfo[]> {
+    const enrichedApprovals: ApprovalInfo[] = [];
+
+    for (const approval of approvals) {
       try {
-        const result = await this.getApprovalsForWallet(address);
-        results.set(normalizeAddress(address), result);
-      } catch (error) {
-        console.error(`Failed to scan ${address}:`, error);
+        const metadata = await this.tokenMetadataService.getTokenMetadata(
+          approval.tokenAddress as Address
+        );
+
+        enrichedApprovals.push({
+          ...approval,
+          tokenSymbol: metadata.symbol || approval.tokenSymbol,
+          tokenDecimals: metadata.decimals ?? approval.tokenDecimals,
+        });
+      } catch {
+        // Keep original data if metadata fetch fails
+        enrichedApprovals.push(approval);
       }
     }
 
-    return results;
+    return enrichedApprovals;
   }
 }

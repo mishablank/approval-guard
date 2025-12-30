@@ -1,122 +1,153 @@
-import { TokenApproval, RiskAssessment, RiskLevel } from '../types';
-import { RISK_WEIGHTS, UNLIMITED_APPROVAL_THRESHOLD } from '../constants';
+import type { ApprovalInfo, RiskAssessment } from '../types';
+import { RiskCalculator, RiskLevel } from '../risk';
+import { HistoryTracker } from '../history';
 
-export interface RiskAnalysisConfig {
-  unlimitedThreshold?: bigint;
-  dormantDays?: number;
-  customWeights?: Partial<typeof RISK_WEIGHTS>;
+export interface RiskAnalysisOptions {
+  includeHistory?: boolean;
+  customWeights?: Partial<RiskWeights>;
 }
 
-export class RiskAnalysisService {
-  private unlimitedThreshold: bigint;
-  private dormantDays: number;
-  private weights: typeof RISK_WEIGHTS;
+export interface RiskWeights {
+  unlimitedApproval: number;
+  dormantApproval: number;
+  unknownSpender: number;
+  highValueToken: number;
+}
 
-  constructor(config: RiskAnalysisConfig = {}) {
-    this.unlimitedThreshold = config.unlimitedThreshold ?? UNLIMITED_APPROVAL_THRESHOLD;
-    this.dormantDays = config.dormantDays ?? 90;
-    this.weights = { ...RISK_WEIGHTS, ...config.customWeights };
+const DEFAULT_WEIGHTS: RiskWeights = {
+  unlimitedApproval: 40,
+  dormantApproval: 25,
+  unknownSpender: 20,
+  highValueToken: 15,
+};
+
+export class RiskAnalysisService {
+  private riskCalculator: RiskCalculator;
+  private historyTracker: HistoryTracker | null;
+  private weights: RiskWeights;
+
+  constructor(
+    riskCalculator?: RiskCalculator,
+    historyTracker?: HistoryTracker,
+    weights?: Partial<RiskWeights>
+  ) {
+    this.riskCalculator = riskCalculator || new RiskCalculator();
+    this.historyTracker = historyTracker || null;
+    this.weights = { ...DEFAULT_WEIGHTS, ...weights };
   }
 
-  analyzeApproval(approval: TokenApproval): RiskAssessment {
-    const factors: string[] = [];
-    let score = 0;
+  async analyzeApproval(
+    approval: ApprovalInfo,
+    options: RiskAnalysisOptions = {}
+  ): Promise<RiskAssessment> {
+    const { includeHistory = true } = options;
 
-    // Check for unlimited approval
-    const isUnlimited = this.isUnlimitedApproval(approval.allowance);
-    if (isUnlimited) {
-      score += this.weights.UNLIMITED_APPROVAL;
-      factors.push('Unlimited approval amount');
+    const baseRisk = this.riskCalculator.calculateRisk(approval);
+
+    let historyRisk = 0;
+    if (includeHistory && this.historyTracker) {
+      const history = await this.historyTracker.getHistory(approval.owner);
+      const approvalHistory = history.find(
+        h => h.tokenAddress === approval.tokenAddress && h.spender === approval.spender
+      );
+
+      if (approvalHistory) {
+        const daysSinceApproval = this.calculateDaysSince(approvalHistory.timestamp);
+        if (daysSinceApproval > 365) {
+          historyRisk = this.weights.dormantApproval;
+        } else if (daysSinceApproval > 180) {
+          historyRisk = this.weights.dormantApproval * 0.5;
+        }
+      }
     }
 
-    // Check for dormant approval
-    const isDormant = this.isDormantApproval(approval.lastUsed);
-    if (isDormant) {
-      score += this.weights.DORMANT_APPROVAL;
-      factors.push(`No activity in ${this.dormantDays}+ days`);
-    }
-
-    // Check spender reputation (placeholder for future implementation)
-    const spenderRisk = this.assessSpenderRisk(approval.spenderAddress);
-    if (spenderRisk > 0) {
-      score += spenderRisk;
-      factors.push('Unknown or risky spender');
-    }
-
-    const level = this.calculateRiskLevel(score);
-    const recommendation = this.generateRecommendation(level, factors);
+    const totalScore = Math.min(100, baseRisk.score + historyRisk);
+    const riskLevel = this.determineRiskLevel(totalScore);
 
     return {
-      level,
-      score: Math.min(score, 100),
-      factors,
-      recommendation,
+      approval,
+      riskScore: totalScore,
+      riskLevel,
+      factors: baseRisk.factors,
+      recommendations: this.generateRecommendations(approval, riskLevel),
     };
   }
 
-  analyzeMultipleApprovals(approvals: TokenApproval[]): Map<string, RiskAssessment> {
-    const assessments = new Map<string, RiskAssessment>();
+  async analyzeMultipleApprovals(
+    approvals: ApprovalInfo[],
+    options: RiskAnalysisOptions = {}
+  ): Promise<RiskAssessment[]> {
+    const assessments: RiskAssessment[] = [];
 
     for (const approval of approvals) {
-      const key = `${approval.tokenAddress}-${approval.spenderAddress}`;
-      assessments.set(key, this.analyzeApproval(approval));
+      const assessment = await this.analyzeApproval(approval, options);
+      assessments.push(assessment);
     }
 
-    return assessments;
+    return assessments.sort((a, b) => b.riskScore - a.riskScore);
   }
 
-  getOverallRiskScore(assessments: RiskAssessment[]): number {
+  calculateOverallRiskScore(assessments: RiskAssessment[]): number {
     if (assessments.length === 0) return 0;
 
-    const totalScore = assessments.reduce((sum, a) => sum + a.score, 0);
+    const criticalCount = assessments.filter(a => a.riskLevel === 'critical').length;
+    const highCount = assessments.filter(a => a.riskLevel === 'high').length;
+    const totalScore = assessments.reduce((sum, a) => sum + a.riskScore, 0);
     const avgScore = totalScore / assessments.length;
-    const maxScore = Math.max(...assessments.map((a) => a.score));
 
-    // Weight average and max scores
-    return Math.round(avgScore * 0.6 + maxScore * 0.4);
+    // Weight critical and high risk approvals more heavily
+    const weightedScore = avgScore + (criticalCount * 10) + (highCount * 5);
+
+    return Math.min(100, Math.round(weightedScore));
   }
 
-  private isUnlimitedApproval(allowance: string): boolean {
-    try {
-      return BigInt(allowance) >= this.unlimitedThreshold;
-    } catch {
-      return false;
-    }
-  }
-
-  private isDormantApproval(lastUsed?: string): boolean {
-    if (!lastUsed) return true;
-
-    const lastUsedDate = new Date(lastUsed);
-    const daysSinceUse = (Date.now() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24);
-    return daysSinceUse >= this.dormantDays;
-  }
-
-  private assessSpenderRisk(spenderAddress: string): number {
-    // Placeholder for spender risk assessment
-    // Future: Check against known malicious addresses, verify contracts, etc.
-    return 0;
-  }
-
-  private calculateRiskLevel(score: number): RiskLevel {
-    if (score >= 70) return 'critical';
-    if (score >= 50) return 'high';
-    if (score >= 30) return 'medium';
+  private determineRiskLevel(score: number): RiskLevel {
+    if (score >= 80) return 'critical';
+    if (score >= 60) return 'high';
+    if (score >= 40) return 'medium';
     return 'low';
   }
 
-  private generateRecommendation(level: RiskLevel, factors: string[]): string {
-    switch (level) {
-      case 'critical':
-        return 'Immediate revocation strongly recommended';
-      case 'high':
-        return 'Consider revoking this approval soon';
-      case 'medium':
-        return 'Review and consider reducing approval amount';
-      case 'low':
-        return 'No immediate action required';
-      default:
-        return 'Unable to determine recommendation';
+  private calculateDaysSince(timestamp: number): number {
+    const now = Date.now();
+    const diff = now - timestamp;
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }
+
+  private generateRecommendations(
+    approval: ApprovalInfo,
+    riskLevel: RiskLevel
+  ): string[] {
+    const recommendations: string[] = [];
+
+    const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+    const isUnlimited = BigInt(approval.allowance) >= maxUint256 / 2n;
+
+    if (riskLevel === 'critical') {
+      recommendations.push('Immediate revocation recommended');
     }
+
+    if (isUnlimited) {
+      recommendations.push('Consider setting a specific allowance instead of unlimited');
+    }
+
+    if (riskLevel === 'high' || riskLevel === 'critical') {
+      recommendations.push('Review spender contract for security audits');
+      recommendations.push('Consider revoking if not actively using this protocol');
+    }
+
+    if (riskLevel === 'medium') {
+      recommendations.push('Monitor this approval regularly');
+    }
+
+    return recommendations;
+  }
+
+  setWeights(weights: Partial<RiskWeights>): void {
+    this.weights = { ...this.weights, ...weights };
+  }
+
+  getWeights(): RiskWeights {
+    return { ...this.weights };
   }
 }
