@@ -1,99 +1,95 @@
 import { Address } from 'viem';
 
 export interface ApprovalData {
-  tokenAddress: Address;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenDecimals: number;
-  spenderAddress: Address;
+  tokenAddress: string;
+  tokenName?: string;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  spenderAddress: string;
   spenderName?: string;
-  allowance: bigint;
+  ownerAddress: string;
+  allowance: string;
   isUnlimited: boolean;
-  lastUpdatedBlock?: number;
-  lastUpdatedTimestamp?: Date;
-}
-
-export interface RiskAssessment {
-  tokenAddress: Address;
-  spenderAddress: Address;
+  blockNumber: number;
+  transactionHash: string;
   riskScore: number;
-  riskLevel: 'low' | 'medium' | 'high' | 'critical';
-  factors: string[];
-}
-
-export interface RevocationRecommendation {
-  tokenAddress: Address;
-  tokenSymbol: string;
-  spenderAddress: Address;
-  spenderName?: string;
-  shouldRevoke: boolean;
-  priority: number;
-  reason: string;
-  estimatedGas?: bigint;
+  riskFactors: string[];
+  lastUsed?: string;
+  approvalDate?: string;
 }
 
 export interface ScanOptions {
-  rpcUrl: string;
-  chainId: number;
   fromBlock?: bigint;
   toBlock?: bigint;
-  batchSize?: number;
+  forceRefresh?: boolean;
+  includeZeroAllowances?: boolean;
 }
 
-export interface Config {
+export interface ScanSummary {
+  totalApprovals: number;
+  unlimitedApprovals: number;
+  highRiskApprovals: number;
+  mediumRiskApprovals: number;
+  lowRiskApprovals: number;
+  averageRiskScore: number;
+}
+
+export interface ScanMetadata {
+  scanTime: string;
+  durationMs: number;
+  fromCache: boolean;
   rpcUrl: string;
-  chainId: number;
-  maxBlockRange: number;
-  requestsPerSecond: number;
-  unlimitedThreshold: bigint;
 }
 
-export interface TokenInfo {
-  address: Address;
+export interface ScanResult {
+  walletAddress: string;
+  approvals: ApprovalData[];
+  summary: ScanSummary;
+  scanMetadata: ScanMetadata;
+}
+
+export interface TokenMetadata {
+  address: string;
   name: string;
   symbol: string;
   decimals: number;
 }
 
 export interface SpenderInfo {
-  address: Address;
+  address: string;
   name?: string;
-  isVerified: boolean;
-  riskScore: number;
+  isContract: boolean;
+  isVerified?: boolean;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export type ReportFormat = 'json' | 'text' | 'csv';
-
-export interface ApprovalReportSummary {
-  totalApprovals: number;
-  highRiskCount: number;
-  mediumRiskCount: number;
-  lowRiskCount: number;
-  totalRiskScore: number;
-  overallRiskLevel: 'low' | 'medium' | 'high' | 'critical';
-}
-
-export interface ApprovalReportDetail {
+export interface RevocationRecommendation {
   approval: ApprovalData;
-  riskAssessment: RiskAssessment;
-  recommendation?: RevocationRecommendation;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  reason: string;
+  estimatedGas?: string;
 }
 
-export interface ApprovalReport {
-  walletAddress: string;
-  generatedAt: string;
-  summary: ApprovalReportSummary;
-  approvals: ApprovalReportDetail[];
+export interface ReportData {
+  scanResult: ScanResult;
   recommendations: RevocationRecommendation[];
+  generatedAt: string;
+  version: string;
 }
 
-export interface BatchItem<T> {
-  data: T;
-  index: number;
+export interface ConfigOptions {
+  rpcUrl: string;
+  defaultBlockRange?: bigint;
+  cacheEnabled?: boolean;
+  cacheTtlMs?: number;
+  batchSize?: number;
 }
 
-export interface BatchResult<T, R> {
-  item: BatchItem<T>;
-  result?: R;
-  error?: Error;
+export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
+
+export interface RiskAssessment {
+  level: RiskLevel;
+  score: number;
+  factors: string[];
+  recommendations: string[];
 }
