@@ -1,10 +1,7 @@
-/**
- * Utility exports
- */
-
-export * from './address.js';
-export * from './formatting.js';
-export * from './batch-processor.js';
-export * from './approval-filters.js';
-export * from './validation.js';
-export * from './spinner.js';
+export * from './address';
+export * from './formatting';
+export * from './batch-processor';
+export * from './approval-filters';
+export * from './validation';
+export * from './spinner';
+export * from './logger';
