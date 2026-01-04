@@ -4,4 +4,4 @@ A CLI utility that scans Ethereum wallet token approvals and outputs a risk asse
 
 ## Updates
 
-Commit 33
+Commit 34
